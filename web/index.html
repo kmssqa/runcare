@@ -11,14 +11,16 @@
   * { box-sizing:border-box } html,body { margin:0; height:100%; font:15px/1.45 -apple-system,system-ui,"Apple SD Gothic Neo","Noto Sans KR",sans-serif; color:var(--fg); background:var(--bg) }
   #app { display:flex; flex-direction:column; height:100dvh }
   #map { flex:1; min-height:45dvh }
-  header { display:flex; gap:8px; align-items:center; padding:10px 12px; border-bottom:1px solid var(--line); flex-wrap:wrap }
-  header h1 { font-size:16px; margin:0 auto 0 0 }
-  .chip { border:1px solid var(--line); border-radius:999px; padding:6px 12px; background:#fff; font-size:14px; cursor:pointer; display:inline-flex; gap:6px; align-items:center }
+  header { display:flex; gap:6px; align-items:center; padding:8px 10px; border-bottom:1px solid var(--line); flex-wrap:wrap }
+  header h1 { font-size:15px; margin:0; flex-basis:100%; }
+  @media (min-width:600px) { header h1 { flex-basis:auto; margin-right:auto } }
+  .chip { border:1px solid var(--line); border-radius:999px; padding:5px 10px; background:#fff; font-size:13px; cursor:pointer; display:inline-flex; gap:6px; align-items:center }
   .chip .dot { width:10px; height:10px; border-radius:50% }
   .chip[aria-pressed="true"] { border-color:currentColor; font-weight:600 }
   .chip.nurse { color:var(--nurse) } .chip.family { color:var(--family) } .chip.toilet { color:var(--toilet) }
   .chip[aria-pressed="false"] { color:var(--muted) }
-  #controls { display:flex; gap:8px; align-items:center; padding:8px 12px; border-bottom:1px solid var(--line); font-size:13px; color:var(--muted) }
+  #controls { display:flex; gap:8px; align-items:center; padding:6px 10px; border-bottom:1px solid var(--line); font-size:13px; color:var(--muted); flex-wrap:wrap }
+  #controls label { white-space:nowrap }
   #controls select, #controls button { font:inherit; padding:5px 8px; border:1px solid var(--line); border-radius:8px; background:#fff }
   #locbtn { color:var(--pri); border-color:var(--pri) }
   #list { height:38dvh; overflow:auto; border-top:1px solid var(--line) }
@@ -29,6 +31,8 @@
   .item .tags span { display:inline-block; font-size:11px; padding:1px 6px; border-radius:6px; background:#f2f2f2; margin:4px 4px 0 0; color:#333 }
   .item.active { background:#f4f7ff }
   #status { padding:8px 12px; font-size:13px; color:var(--muted) }
+  .pin { width:14px; height:14px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.3); cursor:pointer }
+  .pin.active { width:20px; height:20px }
   .lbl { background:#fff; border:1px solid #888; border-radius:4px; padding:2px 6px; font-size:12px; white-space:nowrap; box-shadow:0 1px 3px rgba(0,0,0,.25) }
   a.route { color:var(--pri); text-decoration:none; font-size:13px }
 </style>
@@ -95,9 +99,10 @@ function render() {
   $('#status').textContent = `반경 ${fmt(S.radius)} 안 ${list.length}곳`;
   for (const it of list) {
     const pos = new kakao.maps.LatLng(it.lat, it.lng);
-    const mk = new kakao.maps.Circle({ center: pos, radius: 18, strokeWeight: 2, strokeColor: COLOR[it.cat], fillColor: COLOR[it.cat], fillOpacity: .85, zIndex: 2 });
+    const dot = document.createElement('div'); dot.className = 'pin'; dot.style.background = COLOR[it.cat]; dot.title = it.name;
+    dot.onclick = () => focus(it, true);
+    const mk = new kakao.maps.CustomOverlay({ position: pos, content: dot, yAnchor: .5, xAnchor: .5, zIndex: it.cat === 'toilet' ? 1 : 2 });
     mk.setMap(map); S.markers.push(mk);
-    kakao.maps.event.addListener(mk, 'click', () => focus(it, true));
     const row = document.createElement('div'); row.className = 'item'; row.id = 'i-' + it.id;
     const tags = [];
     if (it.cat === 'nurse') { tags.push(it.typeName); if (it.fatherOk) tags.push('아빠 이용 가능'); if (it.location) tags.push(it.location); }
