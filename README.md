@@ -13,7 +13,7 @@
 - 수유시설 공식 OPEN API(`/home/39.htm`)는 승인 대기 필요 → 배포 전 교체
 
 ## 배포 (GitHub Pages)
-- 소스는 `web/`, 배포 산출물은 `docs/` (`npm run build-data` 가 web + data/*.json 을 복사). GitHub Pages 설정: Branch `main`, folder `/docs`.
+- 소스는 `web/`, 배포 산출물은 `docs/care/` (`npm run build-data` 가 web + data/*.json 을 복사). GitHub Pages 설정: Branch `main`, folder `/docs`.
 - 배포 URL 을 NCP 콘솔 Maps Application 의 Web 서비스 URL 에 추가해야 지도가 뜬다 (예: `https://mskimqa.github.io`).
 - NCP 는 결제수단이 등록된 종량제다. Web Dynamic Map 무료 한도를 넘으면 과금될 수 있으니 콘솔에서 **사용 한도(일/월)** 를 걸어 둔다.
 - 데이터 갱신: `npm run geocode && npm run nursing && npm run build-data` 후 커밋·푸시.
