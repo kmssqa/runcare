@@ -12,10 +12,15 @@
 - 수유실 유형: 가족수유실(3) / 모유수유·착유실(4), 아빠 이용 가능 여부
 - 수유시설 공식 OPEN API(`/home/39.htm`)는 승인 대기 필요 → 배포 전 교체
 
+## 배포 (GitHub Pages)
+- 소스는 `web/`, 배포 산출물은 `docs/` (`npm run build-data` 가 web + data/*.json 을 복사). GitHub Pages 설정: Branch `main`, folder `/docs`.
+- 배포 URL 을 카카오 콘솔 JS 키 도메인에 추가해야 지도가 뜬다 (예: `https://mskimqa.github.io`).
+- 데이터 갱신: `npm run geocode && npm run nursing && npm run build-data` 후 커밋·푸시.
+
 ## 실행
 ```
 cp .env.example .env   # KAKAO_REST_KEY(지오코딩), KAKAO_JS_KEY(지도)
 npm run geocode && npm run nursing
-python3 -m http.server 8766 -d web    # 카카오 콘솔 JS 키 도메인에 http://localhost:8766 등록
+npm run build-data && python3 -m http.server 8766 -d docs   # 카카오 콘솔 JS 키 도메인에 http://localhost:8766 등록
 ```
 `web/index.html` 의 appkey 는 JS 키(도메인 제한)라 노출 OK. REST 키는 스크립트에서만 쓴다.

@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f6fed">
+<title>근처 수유실·가족화장실·개방화장실</title>
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  :root { --bg:#fff; --fg:#111; --muted:#666; --line:#e5e5e5; --pri:#2f6fed; --nurse:#d6336c; --family:#f08c00; --toilet:#2b8a3e; }
+  * { box-sizing:border-box } html,body { margin:0; height:100%; font:15px/1.45 -apple-system,system-ui,"Apple SD Gothic Neo","Noto Sans KR",sans-serif; color:var(--fg); background:var(--bg) }
+  #app { display:flex; flex-direction:column; height:100dvh }
+  #map { flex:1; min-height:45dvh }
+  header { display:flex; gap:6px; align-items:center; padding:8px 10px; border-bottom:1px solid var(--line); flex-wrap:wrap }
+  header h1 { font-size:15px; margin:0; flex-basis:100%; }
+  @media (min-width:600px) { header h1 { flex-basis:auto; margin-right:auto } }
+  .chip { border:1px solid var(--line); border-radius:999px; padding:5px 10px; background:#fff; font-size:13px; cursor:pointer; display:inline-flex; gap:6px; align-items:center }
+  .chip .dot { width:10px; height:10px; border-radius:50% }
+  .chip[aria-pressed="true"] { border-color:currentColor; font-weight:600 }
+  .chip.nurse { color:var(--nurse) } .chip.family { color:var(--family) } .chip.toilet { color:var(--toilet) }
+  .chip[aria-pressed="false"] { color:var(--muted) }
+  #controls { display:flex; gap:8px; align-items:center; padding:6px 10px; border-bottom:1px solid var(--line); font-size:13px; color:var(--muted); flex-wrap:wrap }
+  #controls label { white-space:nowrap }
+  #controls select, #controls button { font:inherit; padding:5px 8px; border:1px solid var(--line); border-radius:8px; background:#fff }
+  #locbtn { color:var(--pri); border-color:var(--pri) }
+  #list { height:38dvh; overflow:auto; border-top:1px solid var(--line) }
+  .item { display:grid; grid-template-columns:10px 1fr auto; gap:10px; padding:10px 12px; border-bottom:1px solid var(--line); align-items:start; cursor:pointer }
+  .item .bar { width:4px; border-radius:2px; align-self:stretch }
+  .item .name { font-weight:600 } .item .sub { color:var(--muted); font-size:13px; margin-top:2px }
+  .item .dist { font-size:13px; color:var(--muted); white-space:nowrap }
+  .item .tags span { display:inline-block; font-size:11px; padding:1px 6px; border-radius:6px; background:#f2f2f2; margin:4px 4px 0 0; color:#333 }
+  .item.active { background:#f4f7ff }
+  #status { padding:8px 12px; font-size:13px; color:var(--muted) }
+  .pin { width:14px; height:14px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.3); cursor:pointer }
+  .pin.active { width:20px; height:20px }
+  .lbl { background:#fff; border:1px solid #888; border-radius:4px; padding:2px 6px; font-size:12px; white-space:nowrap; box-shadow:0 1px 3px rgba(0,0,0,.25) }
+  a.route { color:var(--pri); text-decoration:none; font-size:13px }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>내 주변 편의시설</h1>
+    <button class="chip nurse" data-f="nurse" aria-pressed="true"><span class="dot" style="background:var(--nurse)"></span>수유실</button>
+    <button class="chip family" data-f="family" aria-pressed="true"><span class="dot" style="background:var(--family)"></span>가족화장실</button>
+    <button class="chip toilet" data-f="toilet" aria-pressed="false"><span class="dot" style="background:var(--toilet)"></span>개방화장실</button>
+  </header>
+  <div id="controls">
+    <button id="locbtn">📍 현재 위치</button>
+    <label>반경 <select id="radius"><option value="1000" selected>1km</option><option value="2000">2km</option><option value="3000">3km</option><option value="5000">5km</option></select></label>
+    <label><input type="checkbox" id="fatherOnly"> 아빠 이용 가능만</label>
+    <label><input type="checkbox" id="openNow"> 24시간·상시만</label>
+    <span id="status">데이터 로딩…</span>
+  </div>
+  <div id="map"></div>
+  <div id="list"></div>
+</div>
+<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=db2c2910607f87487893da152e629587&autoload=false"></script>
+<script>
+const S = { filters: { nurse: true, family: true, toilet: false }, center: null, radius: 1000, data: { nursing: [], toilets: [] }, markers: [], overlays: [], active: null };
+const COLOR = { nurse: '#d6336c', family: '#f08c00', toilet: '#2b8a3e' };
+const $ = (s) => document.querySelector(s);
+const hav = (a, b) => { const R = 6371000, p = Math.PI / 180, dl = (b.lat - a.lat) * p, dg = (b.lng - a.lng) * p; const s = Math.sin(dl / 2) ** 2 + Math.cos(a.lat * p) * Math.cos(b.lat * p) * Math.sin(dg / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(s)); };
+const fmt = (m) => m < 1000 ? Math.round(m) + 'm' : (m / 1000).toFixed(1) + 'km';
+
+async function loadData() {
+  const [n, t] = await Promise.all([
+    fetch('data/nursing.json').then((r) => r.ok ? r.json() : []).catch(() => []),
+    fetch('data/toilets.json').then((r) => r.ok ? r.json() : []).catch(() => []),
+  ]);
+  S.data.nursing = n; S.data.toilets = t;
+  $('#status').textContent = `수유실 ${n.length} · 화장실 ${t.length}건 로드`;
+}
+
+function items() {
+  if (!S.center) return [];
+  const out = [];
+  const father = $('#fatherOnly').checked, openNow = $('#openNow').checked;
+  if (S.filters.nurse) for (const r of S.data.nursing) {
+    if (father && !r.fatherOk) continue;
+    const d = hav(S.center, r); if (d <= S.radius) out.push({ cat: 'nurse', d, ...r });
+  }
+  for (const t of S.data.toilets) {
+    const isFamily = t.diaper || t.kids;
+    const cat = isFamily ? 'family' : 'toilet';
+    if (!(S.filters.family && isFamily) && !(S.filters.toilet && !isFamily)) continue;
+    if (openNow && !/24시간|상시|00:00[-~]24:00/.test(t.open + t.openDetail)) continue;
+    const d = hav(S.center, t); if (d <= S.radius) out.push({ cat, d, ...t });
+  }
+  return out.sort((a, b) => a.d - b.d).slice(0, 300);
+}
+
+let map, meMarker, circle;
+function render() {
+  const list = items();
+  S.markers.forEach((m) => m.setMap(null)); S.overlays.forEach((o) => o.setMap(null)); S.markers = []; S.overlays = [];
+  const el = $('#list'); el.innerHTML = '';
+  if (!S.center) { el.innerHTML = '<div id="status">📍 현재 위치를 누르거나 지도를 길게 눌러 기준점을 정하세요.</div>'; return; }
+  $('#status').textContent = `반경 ${fmt(S.radius)} 안 ${list.length}곳`;
+  for (const it of list) {
+    const pos = new kakao.maps.LatLng(it.lat, it.lng);
+    const dot = document.createElement('div'); dot.className = 'pin'; dot.style.background = COLOR[it.cat]; dot.title = it.name;
+    dot.onclick = () => focus(it, true);
+    const mk = new kakao.maps.CustomOverlay({ position: pos, content: dot, yAnchor: .5, xAnchor: .5, zIndex: it.cat === 'toilet' ? 1 : 2 });
+    mk.setMap(map); S.markers.push(mk);
+    const row = document.createElement('div'); row.className = 'item'; row.id = 'i-' + it.id;
+    const tags = [];
+    if (it.cat === 'nurse') { tags.push(it.typeName); if (it.fatherOk) tags.push('아빠 이용 가능'); if (it.location) tags.push(it.location); }
+    else { if (it.diaper) tags.push('기저귀교환대' + (it.diaperWhere ? ' · ' + it.diaperWhere : '')); if (it.kids) tags.push('어린이 변기'); if (it.openDetail || it.open) tags.push(it.openDetail || it.open); if (it.bell) tags.push('비상벨'); tags.push(it.kind); }
+    const nav = `https://map.kakao.com/link/to/${encodeURIComponent(it.name)},${it.lat},${it.lng}`;
+    row.innerHTML = `<div class="bar" style="background:${COLOR[it.cat]}"></div>
+      <div><div class="name">${it.name}</div><div class="sub">${it.addr || ''}</div><div class="tags">${tags.map((t) => '<span>' + t + '</span>').join('')}</div>
+      <a class="route" href="${nav}" target="_blank" rel="noopener">카카오맵 길찾기 ›</a>${it.tel ? ' · <a class="route" href="tel:' + it.tel + '">' + it.tel + '</a>' : ''}</div>
+      <div class="dist">${fmt(it.d)}</div>`;
+    row.onclick = () => focus(it, false);
+    el.appendChild(row);
+  }
+}
+function focus(it, scroll) {
+  S.overlays.forEach((o) => o.setMap(null)); S.overlays = [];
+  document.querySelectorAll('.item.active').forEach((e) => e.classList.remove('active'));
+  const row = document.getElementById('i-' + it.id); if (row) { row.classList.add('active'); if (scroll) row.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  const ov = new kakao.maps.CustomOverlay({ position: new kakao.maps.LatLng(it.lat, it.lng), content: '<div class="lbl">' + it.name + '</div>', yAnchor: 1.8, zIndex: 5 });
+  ov.setMap(map); S.overlays.push(ov);
+  map.panTo(new kakao.maps.LatLng(it.lat, it.lng));
+}
+function setCenter(lat, lng, zoomTo) {
+  S.center = { lat, lng };
+  const pos = new kakao.maps.LatLng(lat, lng);
+  if (!meMarker) { meMarker = new kakao.maps.Marker({ position: pos, map, zIndex: 10 }); } else meMarker.setPosition(pos);
+  if (!circle) { circle = new kakao.maps.Circle({ center: pos, radius: S.radius, strokeWeight: 1, strokeColor: '#2f6fed', strokeOpacity: .6, fillColor: '#2f6fed', fillOpacity: .05 }); circle.setMap(map); } else { circle.setPosition(pos); circle.setRadius(S.radius); }
+  if (zoomTo) fitRadius();
+  render();
+}
+function fitRadius() {
+  if (!S.center) return;
+  const dLat = S.radius / 111320, dLng = S.radius / (111320 * Math.cos(S.center.lat * Math.PI / 180));
+  const b = new kakao.maps.LatLngBounds(new kakao.maps.LatLng(S.center.lat - dLat, S.center.lng - dLng), new kakao.maps.LatLng(S.center.lat + dLat, S.center.lng + dLng));
+  map.setBounds(b, 16);
+}
+function locate() {
+  if (!navigator.geolocation) { alert('이 브라우저는 위치를 지원하지 않습니다'); return; }
+  $('#status').textContent = '위치 확인 중…';
+  navigator.geolocation.getCurrentPosition((p) => setCenter(p.coords.latitude, p.coords.longitude, true),
+    (e) => { $('#status').textContent = '위치 실패(' + e.message + '). 지도를 길게 눌러 기준점을 정하세요.'; }, { enableHighAccuracy: true, timeout: 10000 });
+}
+kakao.maps.load(async () => {
+  map = new kakao.maps.Map($('#map'), { center: new kakao.maps.LatLng(37.4482, 127.1462), level: 7 });
+  // 길게 누르기(모바일) / 우클릭(PC) → 기준점
+  let pressTimer;
+  kakao.maps.event.addListener(map, 'rightclick', (e) => setCenter(e.latLng.getLat(), e.latLng.getLng(), false));
+  $('#map').addEventListener('touchstart', (e) => { pressTimer = setTimeout(() => { const c = map.getCenter(); setCenter(c.getLat(), c.getLng(), false); }, 700); }, { passive: true });
+  $('#map').addEventListener('touchend', () => clearTimeout(pressTimer)); $('#map').addEventListener('touchmove', () => clearTimeout(pressTimer), { passive: true });
+  document.querySelectorAll('.chip').forEach((b) => b.onclick = () => { const f = b.dataset.f; S.filters[f] = !S.filters[f]; b.setAttribute('aria-pressed', String(S.filters[f])); render(); });
+  $('#radius').onchange = (e) => { S.radius = Number(e.target.value); if (circle) circle.setRadius(S.radius); fitRadius(); render(); };
+  $('#fatherOnly').onchange = render; $('#openNow').onchange = render;
+  $('#locbtn').onclick = locate;
+  await loadData();
+  const q = new URLSearchParams(location.search);
+  if (q.get('lat') && q.get('lng')) setCenter(Number(q.get('lat')), Number(q.get('lng')), true);
+  else if (location.protocol === 'https:' || location.hostname === 'localhost') locate();
+  else render();
+});
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
