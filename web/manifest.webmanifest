@@ -1,0 +1,2 @@
+{ "name": "내 주변 편의시설", "short_name": "편의시설", "start_url": "./", "display": "standalone", "background_color": "#ffffff", "theme_color": "#2f6fed",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }] }

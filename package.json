@@ -1,0 +1,12 @@
+{
+  "name": "nearby-care",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "geocode": "node --no-warnings scripts/01-geocode-toilets.ts",
+    "nursing": "node --no-warnings scripts/02-fetch-nursing.ts",
+    "build-data": "node --no-warnings scripts/03-build-data.ts"
+  }
+}
