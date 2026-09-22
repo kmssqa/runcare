@@ -47,7 +47,7 @@
   </header>
   <div id="controls">
     <button id="locbtn">📍 현재 위치</button>
-    <label>반경 <select id="radius"><option value="1000">1km</option><option value="2000">2km</option><option value="3000">3km</option><option value="5000" selected>5km</option></select></label>
+    <label>반경 <select id="radius"><option value="1000" selected>1km</option><option value="2000">2km</option><option value="3000">3km</option><option value="5000">5km</option></select></label>
     <label><input type="checkbox" id="fatherOnly"> 아빠 이용 가능만</label>
     <label><input type="checkbox" id="openNow"> 24시간·상시만</label>
     <span id="status">데이터 로딩…</span>
@@ -57,7 +57,7 @@
 </div>
 <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=db2c2910607f87487893da152e629587&autoload=false"></script>
 <script>
-const S = { filters: { nurse: true, family: true, toilet: false }, center: null, radius: 5000, data: { nursing: [], toilets: [] }, markers: [], overlays: [], active: null };
+const S = { filters: { nurse: true, family: true, toilet: false }, center: null, radius: 1000, data: { nursing: [], toilets: [] }, markers: [], overlays: [], active: null };
 const COLOR = { nurse: '#d6336c', family: '#f08c00', toilet: '#2b8a3e' };
 const $ = (s) => document.querySelector(s);
 const hav = (a, b) => { const R = 6371000, p = Math.PI / 180, dl = (b.lat - a.lat) * p, dg = (b.lng - a.lng) * p; const s = Math.sin(dl / 2) ** 2 + Math.cos(a.lat * p) * Math.cos(b.lat * p) * Math.sin(dg / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(s)); };
@@ -129,8 +129,14 @@ function setCenter(lat, lng, zoomTo) {
   const pos = new kakao.maps.LatLng(lat, lng);
   if (!meMarker) { meMarker = new kakao.maps.Marker({ position: pos, map, zIndex: 10 }); } else meMarker.setPosition(pos);
   if (!circle) { circle = new kakao.maps.Circle({ center: pos, radius: S.radius, strokeWeight: 1, strokeColor: '#2f6fed', strokeOpacity: .6, fillColor: '#2f6fed', fillOpacity: .05 }); circle.setMap(map); } else { circle.setPosition(pos); circle.setRadius(S.radius); }
-  if (zoomTo) { map.setCenter(pos); map.setLevel(S.radius >= 5000 ? 7 : S.radius >= 3000 ? 6 : 5); }
+  if (zoomTo) fitRadius();
   render();
+}
+function fitRadius() {
+  if (!S.center) return;
+  const dLat = S.radius / 111320, dLng = S.radius / (111320 * Math.cos(S.center.lat * Math.PI / 180));
+  const b = new kakao.maps.LatLngBounds(new kakao.maps.LatLng(S.center.lat - dLat, S.center.lng - dLng), new kakao.maps.LatLng(S.center.lat + dLat, S.center.lng + dLng));
+  map.setBounds(b, 16);
 }
 function locate() {
   if (!navigator.geolocation) { alert('이 브라우저는 위치를 지원하지 않습니다'); return; }
@@ -146,7 +152,7 @@ kakao.maps.load(async () => {
   $('#map').addEventListener('touchstart', (e) => { pressTimer = setTimeout(() => { const c = map.getCenter(); setCenter(c.getLat(), c.getLng(), false); }, 700); }, { passive: true });
   $('#map').addEventListener('touchend', () => clearTimeout(pressTimer)); $('#map').addEventListener('touchmove', () => clearTimeout(pressTimer), { passive: true });
   document.querySelectorAll('.chip').forEach((b) => b.onclick = () => { const f = b.dataset.f; S.filters[f] = !S.filters[f]; b.setAttribute('aria-pressed', String(S.filters[f])); render(); });
-  $('#radius').onchange = (e) => { S.radius = Number(e.target.value); if (circle) circle.setRadius(S.radius); render(); };
+  $('#radius').onchange = (e) => { S.radius = Number(e.target.value); if (circle) circle.setRadius(S.radius); fitRadius(); render(); };
   $('#fatherOnly').onchange = render; $('#openNow').onchange = render;
   $('#locbtn').onclick = locate;
   await loadData();
