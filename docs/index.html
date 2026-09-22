@@ -107,12 +107,11 @@ function render() {
     const tags = [];
     if (it.cat === 'nurse') { tags.push(it.typeName); if (it.fatherOk) tags.push('아빠 이용 가능'); if (it.location) tags.push(it.location); }
     else { if (it.diaper) tags.push('기저귀교환대' + (it.diaperWhere ? ' · ' + it.diaperWhere : '')); if (it.kids) tags.push('어린이 변기'); if (it.openDetail || it.open) tags.push(it.openDetail || it.open); if (it.bell) tags.push('비상벨'); tags.push(it.kind); }
-    const nav = `https://map.kakao.com/link/to/${encodeURIComponent(it.name)},${it.lat},${it.lng}`;
     // 네이버: /p/directions/<출발 lng,lat,이름>/<도착 lng,lat,이름>/-/walk  (사용자가 쓴 네이버 URL 형식)
     const nnav = `https://map.naver.com/p/directions/${S.center.lng},${S.center.lat},${encodeURIComponent('내 위치')}/${it.lng},${it.lat},${encodeURIComponent(it.name)}/-/walk`;
     row.innerHTML = `<div class="bar" style="background:${COLOR[it.cat]}"></div>
       <div><div class="name">${it.name}</div><div class="sub">${it.addr || ''}</div><div class="tags">${tags.map((t) => '<span>' + t + '</span>').join('')}</div>
-      <a class="route" href="${nnav}" target="_blank" rel="noopener">네이버 길찾기 ›</a> · <a class="route" href="${nav}" target="_blank" rel="noopener">카카오맵 ›</a>${it.tel ? ' · <a class="route" href="tel:' + it.tel + '">' + it.tel + '</a>' : ''}</div>
+      <a class="route" href="${nnav}" target="_blank" rel="noopener">네이버 길찾기 ›</a>${it.tel ? ' · <a class="route" href="tel:' + it.tel + '">' + it.tel + '</a>' : ''}</div>
       <div class="dist">${fmt(it.d)}</div>`;
     row.onclick = () => focus(it, false);
     el.appendChild(row);
