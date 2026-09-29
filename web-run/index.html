@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f6fed">
+<!-- 지도: 네이버 Maps JS v3 (Client ID 는 Web 서비스 URL 도메인 제한 → 노출 OK). 코스는 runmakers 08·10 으로 사전 계산한 data/run.json -->
+<title>러닝 코스 추천 · 집 출발</title>
+<script>window.navermap_authFailure=function(){document.getElementById('status').textContent='네이버 지도 인증 실패: NCP 콘솔 Web 서비스 URL 에 '+location.origin+' 등록 필요';};</script>
+<style>
+  :root { --bg:#fff; --fg:#111; --muted:#666; --line:#e5e5e5; --pri:#2f6fed; }
+  * { box-sizing:border-box } html,body { margin:0; height:100%; font:15px/1.45 -apple-system,system-ui,"Apple SD Gothic Neo","Noto Sans KR",sans-serif; color:var(--fg); background:var(--bg) }
+  #app { display:flex; flex-direction:column; height:100dvh }
+  #map { flex:1; min-height:40dvh }
+  header { display:flex; gap:6px; align-items:center; padding:8px 10px; border-bottom:1px solid var(--line); flex-wrap:wrap }
+  header h1 { font-size:15px; margin:0; flex-basis:100%; }
+  @media (min-width:600px) { header h1 { flex-basis:auto; margin-right:auto } }
+  .seg { display:inline-flex; border:1px solid var(--pri); border-radius:8px; overflow:hidden }
+  .seg button { font:inherit; font-size:13px; padding:5px 10px; border:0; background:#fff; color:var(--pri); cursor:pointer }
+  .seg button[aria-pressed="true"] { background:var(--pri); color:#fff; font-weight:600 }
+  .chip { border:1px solid var(--line); border-radius:999px; padding:5px 10px; background:#fff; font-size:13px; cursor:pointer; color:var(--muted) }
+  .chip[aria-pressed="true"] { border-color:var(--pri); color:var(--pri); font-weight:600 }
+  #list { height:42dvh; overflow:auto; border-top:1px solid var(--line) }
+  .item { display:grid; grid-template-columns:10px 1fr auto; gap:10px; padding:10px 12px; border-bottom:1px solid var(--line); align-items:start; cursor:pointer }
+  .item .bar { width:4px; border-radius:2px; align-self:stretch }
+  .item .name { font-weight:600 } .item .sub { color:var(--muted); font-size:13px; margin-top:2px }
+  .item .dist { font-size:13px; color:var(--muted); white-space:nowrap; text-align:right }
+  .item .tags span { display:inline-block; font-size:11px; padding:1px 6px; border-radius:6px; background:#f2f2f2; margin:4px 4px 0 0; color:#333 }
+  .item.active { background:#f4f7ff }
+  #status { padding:8px 12px; font-size:13px; color:var(--muted) }
+  .pin { width:14px; height:14px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.3); cursor:pointer }
+  a.route { color:var(--pri); text-decoration:none; font-size:13px; margin-right:10px }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>러닝 코스 추천 · 집 출발</h1>
+    <span class="seg" id="kms"><button data-km="5">5km</button><button data-km="10" aria-pressed="true">10km</button><button data-km="15">15km</button><button data-km="20">20km</button></span>
+    <button class="chip" data-t="track" aria-pressed="false">트랙</button>
+    <button class="chip" data-t="flat" aria-pressed="false">평지</button>
+    <button class="chip" data-t="uphill" aria-pressed="false">업힐</button>
+    <button class="chip" data-t="hangang" aria-pressed="false">한강</button>
+    <button class="chip" data-t="water" aria-pressed="false">호수·천</button>
+  </header>
+  <div id="status">데이터 로딩…</div>
+  <div id="map"></div>
+  <div id="list"></div>
+</div>
+<script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=v1klsmk6eq"></script>
+<script>
+const S = { km: 10, tags: new Set(), data: null, lines: [], markers: [], active: null };
+const TAG = { track: '트랙', flat: '평지', uphill: '업힐', hangang: '한강', water: '호수·천' };
+const COLORS = ['#d62728', '#1f77b4', '#2ca02c', '#9467bd', '#ff7f0e', '#8c564b', '#e377c2', '#17becf', '#bcbd22', '#7f7f7f', '#393b79', '#637939'];
+const $ = (s) => document.querySelector(s);
+const ll = (c) => new naver.maps.LatLng(c[1], c[0]);
+
+function courses() {
+  return S.data.courses.filter((c) => c.km === S.km && [...S.tags].every((t) => c.tags.includes(t))).sort((a, b) => a.moveKm - b.moveKm);
+}
+
+// GPX 1.1 (runmakers phase0/lib/gpx.ts 와 같은 형식) — JSON 용량을 줄이려고 브라우저에서 생성
+function gpx(c) {
+  const name = `runcare ${c.spot} ${c.km}km`.replace(/[^\w가-힣 -]/g, '').slice(0, 40);
+  const pts = c.coords.map((p) => `      <trkpt lat="${p[1].toFixed(6)}" lon="${p[0].toFixed(6)}">${p.length === 3 ? `<ele>${p[2].toFixed(1)}</ele>` : ''}</trkpt>`).join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="runcare" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${name}</name></metadata>\n  <trk><name>${name}</name><trkseg>\n${pts}\n  </trkseg></trk>\n</gpx>\n`;
+}
+function download(c) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([gpx(c)], { type: 'application/gpx+xml' }));
+  a.download = `runcare-${c.spotId}-${c.km}km.gpx`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+let map;
+function render() {
+  S.lines.forEach((l) => l.setMap(null)); S.markers.forEach((m) => m.setMap(null)); S.lines = []; S.markers = []; S.active = null;
+  const list = courses(), el = $('#list'), home = S.data.home;
+  el.innerHTML = '';
+  $('#status').textContent = `${S.data.home.name} 출발 · ${S.km}km · ${list.length}곳${S.tags.size ? ' · ' + [...S.tags].map((t) => TAG[t]).join('+') : ''}`;
+  if (!list.length) { el.innerHTML = '<div id="status">조건에 맞는 코스가 없습니다. 필터를 줄여 보세요.</div>'; return; }
+  const bounds = new naver.maps.LatLngBounds(ll(home.lngLat), ll(home.lngLat));
+  list.forEach((c, i) => {
+    const color = COLORS[i % COLORS.length];
+    c._line = c.coords ? new naver.maps.Polyline({ map, path: c.coords.map(ll), strokeColor: color, strokeWeight: 4, strokeOpacity: .8, strokeStyle: c.kind === 'loop' ? 'shortdash' : 'solid', clickable: true }) : null;
+    if (c._line) { S.lines.push(c._line); naver.maps.Event.addListener(c._line, 'click', () => focus(c, true)); c.coords.forEach((p) => bounds.extend(ll(p))); }
+    const mk = new naver.maps.Marker({ position: ll(c.spotLngLat), map, title: c.spot, icon: { content: `<div class="pin" style="background:${color}"></div>`, anchor: new naver.maps.Point(7, 7) } });
+    naver.maps.Event.addListener(mk, 'click', () => focus(c, true));
+    S.markers.push(mk); bounds.extend(ll(c.spotLngLat));
+    const sub = c.coords
+      ? `${c.kind === 'loop' ? '루프' : '왕복'} ${c.distanceKm}km · 신호 ${c.signals} · 횡단 ${c.crossings} · 상승 ${c.ascentM}m(${c.perKm}m/km) · 최대경사 ${c.maxGradePct}% · 산책로 ${c.trailPct}% · 내 기록 겹침 ${c.heatPct}%`
+      : c.note;
+    // 네이버: /p/directions/<출발>/<도착>/-/<walk|transit>. 2km 넘으면 대중교통
+    const nnav = `https://map.naver.com/p/directions/${home.lngLat[0]},${home.lngLat[1]},${encodeURIComponent('집')}/${c.spotLngLat[0]},${c.spotLngLat[1]},${encodeURIComponent(c.spot)}/-/${c.moveKm <= 2 ? 'walk' : 'transit'}`;
+    const row = document.createElement('div'); row.className = 'item'; row.id = 'c-' + c.id;
+    row.innerHTML = `<div class="bar" style="background:${color}"></div>
+      <div><div class="name">${c.spot}</div><div class="sub">${sub}</div><div class="tags">${c.tags.map((t) => '<span>' + TAG[t] + '</span>').join('')}</div>
+      ${c.coords ? '<a class="route gpx" href="#">GPX 다운로드</a>' : ''}<a class="route" href="${nnav}" target="_blank" rel="noopener">스팟까지 길찾기 ›</a></div>
+      <div class="dist">집에서<br>${c.moveKm}km</div>`;
+    row.onclick = () => focus(c, false);
+    const g = row.querySelector('.gpx'); if (g) g.onclick = (e) => { e.preventDefault(); e.stopPropagation(); download(c); };
+    el.appendChild(row);
+  });
+  map.fitBounds(bounds, { top: 16, right: 16, bottom: 16, left: 16 });
+}
+function focus(c, scroll) {
+  document.querySelectorAll('.item.active').forEach((e) => e.classList.remove('active'));
+  const row = document.getElementById('c-' + c.id); if (row) { row.classList.add('active'); if (scroll) row.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  S.lines.forEach((l) => l.setOptions({ strokeOpacity: .25, strokeWeight: 3, zIndex: 1 }));
+  if (c._line) {
+    c._line.setOptions({ strokeOpacity: 1, strokeWeight: 6, zIndex: 10 });
+    const b = new naver.maps.LatLngBounds(ll(c.coords[0]), ll(c.coords[0])); c.coords.forEach((p) => b.extend(ll(p)));
+    map.fitBounds(b, { top: 16, right: 16, bottom: 16, left: 16 });
+  } else map.panTo(ll(c.spotLngLat));
+}
+(async () => {
+  if (!window.naver || !naver.maps) { $('#status').textContent = '네이버 지도 SDK 로드 실패'; return; }
+  map = new naver.maps.Map('map', { center: new naver.maps.LatLng(37.4482, 127.1462), zoom: 13, zoomControl: false, mapDataControl: false, logoControlOptions: { position: naver.maps.Position.BOTTOM_LEFT } });
+  S.data = await fetch('data/run.json').then((r) => r.json()).catch(() => null);
+  if (!S.data) { $('#status').textContent = 'data/run.json 로드 실패'; return; }
+  new naver.maps.Marker({ position: ll(S.data.home.lngLat), map, zIndex: 20, title: '집', icon: { content: '<div style="width:18px;height:18px;border-radius:50%;background:#2f6fed;border:3px solid #fff;box-shadow:0 0 0 2px #2f6fed"></div>', anchor: new naver.maps.Point(9, 9) } });
+  document.querySelectorAll('#kms button').forEach((b) => b.onclick = () => {
+    S.km = Number(b.dataset.km); document.querySelectorAll('#kms button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); render();
+  });
+  document.querySelectorAll('.chip').forEach((b) => b.onclick = () => {
+    const t = b.dataset.t; S.tags.has(t) ? S.tags.delete(t) : S.tags.add(t); b.setAttribute('aria-pressed', String(S.tags.has(t))); render();
+  });
+  render();
+})();
+</script>
+</body>
+</html>
