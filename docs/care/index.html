@@ -154,8 +154,20 @@ function locate() {
   // 길게 누르기(모바일) / 우클릭(PC) → 기준점
   let pressTimer;
   naver.maps.Event.addListener(map, 'rightclick', (e) => setCenter(e.coord.lat(), e.coord.lng(), false));
-  $('#map').addEventListener('touchstart', (e) => { pressTimer = setTimeout(() => { const c = map.getCenter(); setCenter(c.lat(), c.lng(), false); }, 700); }, { passive: true });
-  $('#map').addEventListener('touchend', () => clearTimeout(pressTimer)); $('#map').addEventListener('touchmove', () => clearTimeout(pressTimer), { passive: true });
+  // 한 손가락으로 1초 이상, 움직임 없이 눌렀을 때만. 핀치(두 손가락)·드래그·줌은 무시.
+  const cancelPress = () => { clearTimeout(pressTimer); pressTimer = null; };
+  $('#map').addEventListener('touchstart', (e) => {
+    cancelPress(); if (e.touches.length !== 1) return;
+    const t = e.touches[0], sx = t.clientX, sy = t.clientY;
+    pressTimer = setTimeout(() => {
+      const r = $('#map').getBoundingClientRect();
+      const c = map.getProjection().fromOffsetToCoord(new naver.maps.Point(sx - r.left, sy - r.top));
+      setCenter(c.lat(), c.lng(), false);
+    }, 1000);
+  }, { passive: true });
+  $('#map').addEventListener('touchmove', cancelPress, { passive: true });
+  $('#map').addEventListener('touchend', cancelPress); $('#map').addEventListener('touchcancel', cancelPress);
+  naver.maps.Event.addListener(map, 'zoom_changed', cancelPress); naver.maps.Event.addListener(map, 'dragstart', cancelPress);
   document.querySelectorAll('.chip').forEach((b) => b.onclick = () => { const f = b.dataset.f; S.filters[f] = !S.filters[f]; b.setAttribute('aria-pressed', String(S.filters[f])); render(); });
   $('#radius').onchange = (e) => { S.radius = Number(e.target.value); if (circle) circle.setRadius(S.radius); fitRadius(); render(); };
   $('#fatherOnly').onchange = render; $('#openNow').onchange = render;
