@@ -30,6 +30,8 @@
   #status { padding:8px 12px; font-size:13px; color:var(--muted) }
   .pin { width:14px; height:14px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.3); cursor:pointer }
   a.route { color:var(--pri); text-decoration:none; font-size:13px; margin-right:10px }
+  .poi { width:12px; height:12px; border-radius:3px; border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.35); cursor:pointer }
+  .chip.poi-chip .dot { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px }
 </style>
 </head>
 <body>
@@ -42,6 +44,8 @@
     <button class="chip" data-t="uphill" aria-pressed="false">업힐</button>
     <button class="chip" data-t="hangang" aria-pressed="false">한강</button>
     <button class="chip" data-t="water" aria-pressed="false">호수·천</button>
+    <button class="chip poi-chip" data-p="family" aria-pressed="true"><span class="dot" style="background:#f08c00"></span>가족화장실</button>
+    <button class="chip poi-chip" data-p="fountain" aria-pressed="true"><span class="dot" style="background:#1c7ed6"></span>음수대</button>
   </header>
   <div id="status">데이터 로딩…</div>
   <div id="map"></div>
@@ -49,7 +53,9 @@
 </div>
 <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=v1klsmk6eq"></script>
 <script>
-const S = { km: 10, tags: new Set(), data: null, lines: [], markers: [], active: null };
+const S = { km: 10, tags: new Set(), pois: new Set(['family', 'fountain']), data: null, lines: [], markers: [], active: null };
+// 코스 경로 300m 이내 시설(03-build-data 가 run.pois·course.poi 로 계산). 음수대는 서울 아리수맵만
+const POI = { family: { label: '가족화장실', color: '#f08c00' }, fountain: { label: '음수대', color: '#1c7ed6' } };
 const TAG = { track: '트랙', flat: '평지', uphill: '업힐', hangang: '한강', water: '호수·천' };
 const COLORS = ['#d62728', '#1f77b4', '#2ca02c', '#9467bd', '#ff7f0e', '#8c564b', '#e377c2', '#17becf', '#bcbd22', '#7f7f7f', '#393b79', '#637939'];
 const $ = (s) => document.querySelector(s);
@@ -71,9 +77,9 @@ function download(c) {
   a.download = `runcare-${c.spotId}-${c.km}km.gpx`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-let map;
+let map, info;
 function render() {
-  S.lines.forEach((l) => l.setMap(null)); S.markers.forEach((m) => m.setMap(null)); S.lines = []; S.markers = []; S.active = null;
+  S.lines.forEach((l) => l.setMap(null)); S.markers.forEach((m) => m.setMap(null)); S.lines = []; S.markers = []; S.active = null; info.close();
   const list = courses(), el = $('#list'), home = S.data.home;
   el.innerHTML = '';
   $('#status').textContent = `${S.data.home.name} 출발 · ${S.km}km · ${list.length}곳${S.tags.size ? ' · ' + [...S.tags].map((t) => TAG[t]).join('+') : ''}`;
@@ -86,9 +92,10 @@ function render() {
     const mk = new naver.maps.Marker({ position: ll(c.spotLngLat), map, title: c.spot, icon: { content: `<div class="pin" style="background:${color}"></div>`, anchor: new naver.maps.Point(7, 7) } });
     naver.maps.Event.addListener(mk, 'click', () => focus(c, true));
     S.markers.push(mk); bounds.extend(ll(c.spotLngLat));
-    const sub = c.coords
+    const poiN = (k) => (c.poi || []).filter((i) => S.data.pois[i].k === k).length;
+    const sub = (c.coords
       ? `${c.kind === 'loop' ? '루프' : '왕복'} ${c.distanceKm}km · 신호 ${c.signals} · 횡단 ${c.crossings} · 상승 ${c.ascentM}m(${c.perKm}m/km) · 최대경사 ${c.maxGradePct}% · 산책로 ${c.trailPct}% · 내 기록 겹침 ${c.heatPct}%`
-      : c.note;
+      : c.note) + (S.data.pois ? ` · 가족화장실 ${poiN('family')} · 음수대 ${poiN('fountain')}` : '');
     // 네이버: /p/directions/<출발>/<도착>/-/<walk|transit>. 2km 넘으면 대중교통
     const nnav = `https://map.naver.com/p/directions/${home.lngLat[0]},${home.lngLat[1]},${encodeURIComponent('집')}/${c.spotLngLat[0]},${c.spotLngLat[1]},${encodeURIComponent(c.spot)}/-/${c.moveKm <= 2 ? 'walk' : 'transit'}`;
     const row = document.createElement('div'); row.className = 'item'; row.id = 'c-' + c.id;
@@ -100,6 +107,13 @@ function render() {
     const g = row.querySelector('.gpx'); if (g) g.onclick = (e) => { e.preventDefault(); e.stopPropagation(); download(c); };
     el.appendChild(row);
   });
+  const shown = new Set(list.flatMap((c) => c.poi || []));
+  for (const i of shown) {
+    const p = S.data.pois[i]; if (!S.pois.has(p.k)) continue;
+    const mk = new naver.maps.Marker({ position: new naver.maps.LatLng(p.lat, p.lng), map, zIndex: 5, title: p.name, icon: { content: `<div class="poi" style="background:${POI[p.k].color}"></div>`, anchor: new naver.maps.Point(8, 8) } });
+    naver.maps.Event.addListener(mk, 'click', () => { info.setContent(`<div style="padding:8px 10px;font-size:13px;max-width:220px"><b>${p.name}</b><br><span style="color:#666">${POI[p.k].label}${p.sub ? ' · ' + p.sub : ''}</span></div>`); info.open(map, mk); });
+    S.markers.push(mk);
+  }
   map.fitBounds(bounds, { top: 16, right: 16, bottom: 16, left: 16 });
 }
 function focus(c, scroll) {
@@ -114,6 +128,7 @@ function focus(c, scroll) {
 }
 (async () => {
   if (!window.naver || !naver.maps) { $('#status').textContent = '네이버 지도 SDK 로드 실패'; return; }
+  info = new naver.maps.InfoWindow({ content: '', borderWidth: 1, disableAnchor: false });
   map = new naver.maps.Map('map', { center: new naver.maps.LatLng(37.4482, 127.1462), zoom: 13, zoomControl: false, mapDataControl: false, logoControlOptions: { position: naver.maps.Position.BOTTOM_LEFT } });
   S.data = await fetch('data/run.json').then((r) => r.json()).catch(() => null);
   if (!S.data) { $('#status').textContent = 'data/run.json 로드 실패'; return; }
@@ -121,7 +136,10 @@ function focus(c, scroll) {
   document.querySelectorAll('#kms button').forEach((b) => b.onclick = () => {
     S.km = Number(b.dataset.km); document.querySelectorAll('#kms button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); render();
   });
-  document.querySelectorAll('.chip').forEach((b) => b.onclick = () => {
+  document.querySelectorAll('.poi-chip').forEach((b) => b.onclick = () => {
+    const k = b.dataset.p; S.pois.has(k) ? S.pois.delete(k) : S.pois.add(k); b.setAttribute('aria-pressed', String(S.pois.has(k))); render();
+  });
+  document.querySelectorAll('.chip[data-t]').forEach((b) => b.onclick = () => {
     const t = b.dataset.t; S.tags.has(t) ? S.tags.delete(t) : S.tags.add(t); b.setAttribute('aria-pressed', String(S.tags.has(t))); render();
   });
   render();

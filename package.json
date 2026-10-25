@@ -7,6 +7,7 @@
   "scripts": {
     "geocode": "node --no-warnings scripts/01-geocode-toilets.ts",
     "nursing": "node --no-warnings scripts/02-fetch-nursing.ts",
+    "fountains": "node --no-warnings scripts/04-fetch-fountains.ts && node --no-warnings scripts/05-fetch-naver-fountains.ts",
     "build-data": "node --no-warnings scripts/03-build-data.ts"
   }
 }
