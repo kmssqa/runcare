@@ -2,18 +2,22 @@
  *  docs/ 루트는 runcare 저장소 공용: /care (편의시설), /run (러닝 코스, runmakers 에서 data/run.json 생성). */
 import { copyFileSync, existsSync, mkdirSync, cpSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 
+const M = 111320, kx = Math.cos((37.5 * Math.PI) / 180) * M; // 등장방형 근사(m)
+const load = (f: string) => existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : [];
+/** 음수대: 아리수(서울 공식 위치) + 네이버 검색(경기 포함). 네이버는 아리수와 30m 이내면 중복으로 버림. /care·/run 공용 */
+function fountains() {
+  const out = load('data/fountains.json').map((f: any) => ({ id: f.id, name: `${f.name} 음수대`, where: f.where, addr: f.addr, src: '아리수', lng: f.lng, lat: f.lat }));
+  for (const f of load('data/fountains-naver.json'))
+    if (!out.some((a: any) => Math.hypot((a.lng - f.lng) * kx, (a.lat - f.lat) * M) < 30)) out.push({ id: f.id, name: f.name, where: '', addr: f.addr, src: '네이버', lng: f.lng, lat: f.lat });
+  return out;
+}
+
 /** 코스 경로(없으면 스팟) 300m 이내 공용 화장실(공중·개방화장실 전체)·음수대 → run.pois + course.poi(인덱스) */
 const POI_M = 300;
 function withPois(run: any) {
   const toilets = JSON.parse(readFileSync('data/toilets.json', 'utf8'))
     .map((t: any) => ({ k: 'toilet', name: t.name, sub: t.openDetail || t.open || '', lng: t.lng, lat: t.lat }));
-  const M = 111320, kx = Math.cos((37.5 * Math.PI) / 180) * M; // 등장방형 근사(m)
-  const load = (f: string) => existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : [];
-  // 음수대: 아리수(서울 공식 위치) + 네이버 검색(경기 포함). 네이버는 아리수와 30m 이내면 중복으로 버림
-  const fountains = load('data/fountains.json').map((f: any) => ({ k: 'fountain', name: `${f.name} 음수대`, sub: f.where, lng: f.lng, lat: f.lat }));
-  for (const f of load('data/fountains-naver.json'))
-    if (!fountains.some((a: any) => Math.hypot((a.lng - f.lng) * kx, (a.lat - f.lat) * M) < 30)) fountains.push({ k: 'fountain', name: f.name, sub: '네이버', lng: f.lng, lat: f.lat });
-  const all = [...toilets, ...fountains], pois: any[] = [], idx = new Map<any, number>();
+  const all = [...toilets, ...fountains().map((f: any) => ({ k: 'fountain', name: f.name, sub: f.src === '네이버' ? '네이버' : f.where, lng: f.lng, lat: f.lat }))], pois: any[] = [], idx = new Map<any, number>();
   const segDist = (p: number[], a: number[], b: number[]) => {
     const ax = (a[0] - p[0]) * kx, ay = (a[1] - p[1]) * M, bx = (b[0] - p[0]) * kx, by = (b[1] - p[1]) * M;
     const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
@@ -40,6 +44,7 @@ function withPois(run: any) {
 }
 mkdirSync('docs/care/data', { recursive: true });
 for (const f of ['toilets.json', 'nursing.json']) copyFileSync(`data/${f}`, `docs/care/data/${f}`);
+writeFileSync('docs/care/data/fountains.json', JSON.stringify(fountains()));
 for (const f of readdirSync('web')) if (f !== 'data') cpSync(`web/${f}`, `docs/care/${f}`);
 mkdirSync('docs/run/data', { recursive: true });
 if (existsSync('data/run.json')) writeFileSync('docs/run/data/run.json', JSON.stringify(withPois(JSON.parse(readFileSync('data/run.json', 'utf8')))));
