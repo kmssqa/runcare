@@ -2,11 +2,11 @@
  *  docs/ 루트는 runcare 저장소 공용: /care (편의시설), /run (러닝 코스, runmakers 에서 data/run.json 생성). */
 import { copyFileSync, existsSync, mkdirSync, cpSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 
-/** 코스 경로(없으면 스팟) 300m 이내 가족화장실(기저귀교환대 또는 어린이 변기)·음수대 → run.pois + course.poi(인덱스) */
+/** 코스 경로(없으면 스팟) 300m 이내 공용 화장실(공중·개방화장실 전체)·음수대 → run.pois + course.poi(인덱스) */
 const POI_M = 300;
 function withPois(run: any) {
-  const toilets = JSON.parse(readFileSync('data/toilets.json', 'utf8')).filter((t: any) => t.diaper || t.kids)
-    .map((t: any) => ({ k: 'family', name: t.name, sub: t.openDetail || t.open || '', lng: t.lng, lat: t.lat }));
+  const toilets = JSON.parse(readFileSync('data/toilets.json', 'utf8'))
+    .map((t: any) => ({ k: 'toilet', name: t.name, sub: t.openDetail || t.open || '', lng: t.lng, lat: t.lat }));
   const M = 111320, kx = Math.cos((37.5 * Math.PI) / 180) * M; // 등장방형 근사(m)
   const load = (f: string) => existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : [];
   // 음수대: 아리수(서울 공식 위치) + 네이버 검색(경기 포함). 네이버는 아리수와 30m 이내면 중복으로 버림
@@ -35,7 +35,7 @@ function withPois(run: any) {
       c.poi.push(idx.get(p));
     }
   }
-  console.log(`  run: 코스 ${run.courses.length}개, 주변 시설 ${pois.length}곳 (가족화장실 ${pois.filter((p) => p.k === 'family').length}, 음수대 ${pois.filter((p) => p.k === 'fountain').length})`);
+  console.log(`  run: 코스 ${run.courses.length}개, 주변 시설 ${pois.length}곳 (화장실 ${pois.filter((p) => p.k === 'toilet').length}, 음수대 ${pois.filter((p) => p.k === 'fountain').length})`);
   return { ...run, pois };
 }
 mkdirSync('docs/care/data', { recursive: true });
